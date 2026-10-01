@@ -22,6 +22,11 @@ then answer with Waverider's pages and labels:
   of `jsr getShortName`): the record ids Waverider relabels get our labels; every
   other id, and every other track, goes to the stock `getShortName` `0x400372da`
   unchanged (a tail jump, so the stack is the caller's own).
+- `wr_long`, entered by `jsr` from inside the long-name getter `0x400365c8` at
+  `0x400365f2` (in place of its push of the record's long name and of d2): our long
+  name for the ids Waverider renames, on a Waverider track; the record's otherwise.
+  The header asks for it through the parameter set's display name (vtable +88,
+  `0x40036612`) while a knob turns (emulator, `--stack-at 0x400365c8`).
 
 The labels and the page layout are the owner's (2026-10-01), from the Waverider mockup,
 with our own names:
@@ -66,6 +71,10 @@ SUBTITLE = "Waverider"             # where WaveTone's say "WaveTone"
 # record id -> Waverider's label (the records stay WaveTone's: their slots are the
 # frame's params 25..27, which the SHARC loop reads)
 LABELS = {238: "TUNE", 239: "POS", 247: "TBL"}
+# record id -> Waverider's long name, in the stock "Osc1 Waveform" style: what the
+# header shows while a knob turns ("Osc1 Position=65"), and the LFO destination
+# browser on a Waverider track
+LONG_NAMES = {238: "Osc1 Tune", 239: "Osc1 Position", 247: "Osc1 Table"}
 
 # the two pages, encoders A..H; 0 is an empty place
 PAGES = (
@@ -73,7 +82,8 @@ PAGES = (
     (0, 0, 0, 0, 0, 0, 0, 0),         # OSC 2: all to come (M9)
 )
 
-LABELS_OUT = ("is_wr", "wr_count", "wr_page", "wr_label", "wr_icons", "wr_grid", "descriptors")
+LABELS_OUT = ("is_wr", "wr_count", "wr_page", "wr_label", "wr_long", "wr_icons", "wr_grid",
+              "descriptors")
 GRID = 0x40017428                 # the stock grid: (view, canvas)
 ICON_PAGE = 7                     # the SYN page draw's id for WaveTone's OSC page
 ICON_SKIP = 0x400182C6            # its branch target past the oscillator icons
@@ -109,6 +119,8 @@ def source(page_draw: int) -> str:
     renderer's entry, `wr_page_draw(view, canvas)`."""
     table = "\n".join(f"    .long {rid}, lab_{rid}" for rid in LABELS)
     strings = "\n".join(f'lab_{rid}: .asciz "{name}"' for rid, name in LABELS.items())
+    long_table = "\n".join(f"    .long {60 * rid}, long_{rid}" for rid in LONG_NAMES)
+    long_strings = "\n".join(f'long_{rid}: .asciz "{name}"' for rid, name in LONG_NAMES.items())
     pages = []
     for k, entries in enumerate(PAGES):
         pages.append(f"    .long title_{k}, subtitle\n"
@@ -200,6 +212,29 @@ wr_label:
     rts
 9:  jmp     {GET_SHORT_NAME:#010x}
 
+| -- the long-name getter 0x400365c8, at 0x400365f2 (`move.l %a0@(40,%d1:l),-(%sp) ;
+| move.l %d2,-(%sp)`, 6 bytes: push the record's long name, then the string to build),
+| now jsr here. a0 = the record table, d1 = 60 x id; a0 and a1 are free after, the next
+| call (0x401ce69e) is a scratch-register call. Pushes our name or the record's, then
+| d2, under the return address, and goes back.
+wr_long:
+    movea.l %a0@(40,%d1:l),%a1
+    bsr.w   is_wr
+    tst.l   %d0
+    beq.s   9f
+    lea     long_names,%a0
+1:  move.l  %a0@+,%d0
+    beq.s   9f
+    cmp.l   %d0,%d1
+    beq.s   2f
+    addq.l  #4,%a0
+    bra.s   1b
+2:  movea.l %a0@,%a1
+9:  movea.l %sp@+,%a0
+    move.l  %a1,%sp@-
+    move.l  %d2,%sp@-
+    jmp     %a0@
+
 | -- the SYN page draw at 0x4001821e (`moveq #7 ; cmp.l %d3,%d0 ; bne.w` past the icons),
 | now `jsr` here and a nop. Back to the icons (0x40018226) when the stock test would draw
 | them: page id 7 in d3, and not a Waverider track. Otherwise the return address becomes
@@ -235,10 +270,14 @@ wr_grid:
 labels:
 {table}
     .long 0
+long_names:
+{long_table}
+    .long 0
 descriptors:
 {page_data}
 {_rep("subtitle", SUBTITLE)}
 {chr(10).join(_rep(f"title_{k}", t) for k, t in enumerate(TITLES))}
 {strings}
+{long_strings}
     .align 2
 """

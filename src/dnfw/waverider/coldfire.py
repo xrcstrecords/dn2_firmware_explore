@@ -319,6 +319,8 @@ CANON_ARG_SITES = (
 COUNT_SITE = 0x400C24D2                 # SYN page count(type): 0x42432ad4[type].count
 LABEL_SITE = 0x40064622                 # the SYN page's jsr getShortName(this, id)
 LABEL_STOCK = bytes.fromhex("4eb9400372da")
+LONG_SITE = 0x400365F2                  # the long-name getter: push record+0x28, push d2
+LONG_STOCK = bytes.fromhex("2f3018282f02")
 CANON_ARG_STOCK = bytes.fromhex("7204202f0004")
 PAGE_SITE = 0x400C24F2                  # 0x400c24ee: after `move.l %d2,-(%sp) ; moveq #4,%d2`
 PAGE_STOCK = bytes.fromhex("222f0008202f000c")
@@ -476,6 +478,9 @@ def compose(stock: bytes, assemble, compile_c) -> dict:
          "type 5 reads WaveTone's", PAGE_STOCK)
     edit(LABEL_SITE, bytes.fromhex("4eb9") + _long(playout["wr_label"]),
          "the SYN page's label fetch: Waverider's labels for a Waverider track (M7)", LABEL_STOCK)
+    edit(LONG_SITE, bytes.fromhex("4eb9") + _long(playout["wr_long"]),
+         "the long-name getter: Waverider's long names for a Waverider track (the header, "
+         "the LFO destination browser)", LONG_STOCK)
     edit(GRID_SITE, bytes.fromhex("4eb9") + _long(playout["wr_grid"]) + bytes.fromhex("4e714e71"),
          "the SYN page draw: Waverider's own page for a Waverider track (M8.1)", GRID_STOCK)
     edit(ICON_SITE, bytes.fromhex("4eb9") + _long(playout["wr_icons"]) + bytes.fromhex("4e71"),
