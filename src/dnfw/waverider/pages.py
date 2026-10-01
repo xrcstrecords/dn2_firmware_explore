@@ -34,8 +34,9 @@ with our own names:
     page 1, OSC 1   A TUNE  B LEV   C POS   D TBL   E RATE  F MPOS  G MLEV  H MOVE
     page 2, OSC 2   A DETN  B LEV   C POS   D TBL   E RATE  F MPOS  G MLEV  H MOVE
 
-Only TUNE, POS and TBL work in M7 (the loop reads TUN1, WAV1 and TBL1); every other
-place is an empty entry (0), drawn as an empty box, until its milestone.
+Only TUNE, POS and TBL work in M7 (the loop reads TUN1, WAV1 and TBL1), and LEV from M9a
+(LEV1, the reader's gain); every other place is an empty entry (0), drawn as "-",
+until its milestone.
 
 The code, the descriptors and the strings run from RAM as one platform `CODE` chunk at
 `LOAD` (`dnfw.mods.platform`): the caves Waverider already uses are full.
@@ -70,7 +71,7 @@ SUBTITLE = "Waverider"             # where WaveTone's say "WaveTone"
 
 # record id -> Waverider's label (the records stay WaveTone's: their slots are the
 # frame's params 25..27, which the SHARC loop reads)
-LABELS = {238: "TUNE", 239: "POS", 247: "TBL"}
+LABELS = {238: "TUNE", 241: "LEV", 239: "POS", 247: "TBL"}
 # record id -> Waverider's long name, in the stock "Osc1 Waveform" style: what the
 # header shows while a knob turns ("Osc1 Position=65"), and the LFO destination
 # browser on a Waverider track
@@ -78,7 +79,7 @@ LONG_NAMES = {238: "Osc1 Tune", 239: "Osc1 Position", 247: "Osc1 Table"}
 
 # the two pages, encoders A..H; 0 is an empty place
 PAGES = (
-    (238, 0, 239, 247, 0, 0, 0, 0),   # OSC 1: TUNE - POS TBL - - - -
+    (238, 241, 239, 247, 0, 0, 0, 0),   # OSC 1: TUNE LEV POS TBL - - - -  (LEV: M9a)
     (0, 0, 0, 0, 0, 0, 0, 0),         # OSC 2: all to come (M9)
 )
 
