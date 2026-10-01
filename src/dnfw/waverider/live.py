@@ -52,6 +52,8 @@ POS_MAX = 0x7800                 # WAV1's range in the frame: the sound's own
 POS_SHIFT = 5                    # 0x7800 << 5 == 15 << 16
 SLOT_SHIFT = 8                   # TBL1 1: 0x0100, in the sound and in the frame
 TUN1_ZERO = 0x4000               # TUN1's frame word for 0 semitones: the sound's own
+LEV1_UNITY = 0x6400              # LEV1 100, the default: gain exactly 1.0 (Milestone 9a)
+GAIN_STEP = 1 / 25600            # the loop's constant, as float32 0x3823d70a
 
 
 def _f32(x: float) -> float:
@@ -116,18 +118,26 @@ def slot(tbl1: int, count: int) -> int:
     return s if s < count else 0
 
 
+def gain(lev1: int) -> float:
+    """The reader's gain for the frame's 16-bit LEV1 word (Milestone 9a): LEV1 x
+    f32(1/25600) in float32, as the loop computes it; exactly 1.0 at 100."""
+    return _f32(_f32(float(lev1 & 0xFFFF)) * _f32(GAIN_STEP))
+
+
 def render_blocks(tables, blocks, block: int = 32, phase: int = 0,
                   precision: str = "float32") -> tuple[list[float], int]:
-    """The loop's output for a sequence of blocks, each (note, WAV1, TBL1[, TUN1] -- the
-    frame's 16-bit words; TUN1 defaults to 0 semitones): the phase
-    carries across blocks and across slot changes, as the reader block holds it."""
+    """The loop's output for a sequence of blocks, each (note, WAV1, TBL1[, TUN1[, LEV1]])
+    -- the frame's 16-bit words; TUN1 defaults to 0 semitones, LEV1 to 100: the phase
+    carries across blocks and across slot changes, as the reader block holds it. Each
+    sample is the reader's y times the gain, rounded to float32 (reader_m9.asm)."""
     out: list[float] = []
     table_t = increment_table()
     for note, wav1, tbl1, *rest in blocks:
         tun1 = rest[0] if rest else TUN1_ZERO
+        g = gain(rest[1] if len(rest) > 1 else LEV1_UNITY)
         tab = tables[slot(tbl1, len(tables))]
         samples, phase = render.render(tab, phase, increment(tuned(note, tun1), table_t),
                                        position(wav1),
                                        block, precision)
-        out += samples
+        out += [_f32(g * y) for y in samples] if precision == "float32" else [g * y for y in samples]
     return out, phase

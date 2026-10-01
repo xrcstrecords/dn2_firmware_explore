@@ -5,9 +5,10 @@
 `dnfw.waverider.dsp` applies committed objects, never an assembler, so the mod runs
 anywhere. This writes `src/dnfw/waverider/sharc_code.json` from:
 
-- `csrc/waverider/sharc/reader_m5.json`, Milestone 1's reader restricted to the
-  firmware's own instruction forms, and `machine5_live.json`, the M5 loop -- each
-  (re)written from its `.asm` with selas when `--assemble` (WSL + selache);
+- `csrc/waverider/sharc/reader_m9.json` and `machine9_live.json` (Milestone 9a: M5's
+  reader and loop with osc 1's level as a gain; the M5 sources stay beside them) --
+  each (re)written from its `.asm` with selas when `--assemble` (WSL + selache). The
+  spec keeps M5's key names, `reader` and `machine5_live`, which `dsp` reads;
 - the entry `JUMP 0x180200;`, one selas-assembled instruction (`--assemble`), or
   the previous `sharc_code.json`'s copy.
 
@@ -76,8 +77,8 @@ def main(argv=None) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         work = pathlib.Path(tmp)
         if a.assemble:
-            reader = assemble("reader_m5", dsp.READER_SW, work)
-            loop = assemble("machine5_live", dsp.LOOP_SW, work)
+            reader = assemble("reader_m9", dsp.READER_SW, work)
+            loop = assemble("machine9_live", dsp.LOOP_SW, work)
             idle = assemble("idle_load", dsp.IDLE_SW, work)
             count = assemble("block_count", dsp.COUNT_SW, work)
             emark = assemble("entry_mark", dsp.EMARK_SW, work)
@@ -85,8 +86,8 @@ def main(argv=None) -> int:
             jump = one_jump(ENTRY_LINE, dsp.ENTRY_SW, work)
             ijump = one_jump(IDLE_LINE, dsp.IDLE_SITE_SW, work)
         else:
-            reader = committed("reader_m5")
-            loop = committed("machine5_live")
+            reader = committed("reader_m9")
+            loop = committed("machine9_live")
             idle = committed("idle_load")
             count = committed("block_count")
             emark = committed("entry_mark")

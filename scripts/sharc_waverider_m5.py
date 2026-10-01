@@ -24,7 +24,7 @@ dispatch, per-track chain), as Milestone 4 does. Steps, each PASS/FAIL
    the per-type setup is the no-setup arm, the machine tap is bit-exact to
    `dnfw.waverider.live` fed the DSP's own unpacked inputs, audible and correlated at
    the amp's output. Controls: POS 120 (darker), TBL1 1 (the other table, bit-exact),
-   note 72 (an octave up), no trigger (silent).
+   note 72 (an octave up), LEV1 50 and 0 (half and silent, M9a), no trigger (silent).
 4. **stock** -- types 0-4 are bit-identical: the same frames with no type-5 track on
    the M5 and the stock image give identical buffers on all 16 tracks, and in a
    type-5 run tracks 1-15 match a stock run.
@@ -73,12 +73,20 @@ OUT = ROOT / "out" / "waverider"
 SHARC = ROOT / "csrc" / "waverider" / "sharc"
 RATE, BLOCK = 48000, 32
 LOOP_RESUME = 0x1C944C          # where machine5_live rejoins the per-track chain
+
+
+def shipped_sources() -> tuple[str, str]:
+    """The reader's and the loop's source names, from the committed sharc_code.json: what
+    the image carries (reader_m5/machine5_live for M5, reader_m9/machine9_live from M9a)."""
+    spec = json.loads(dsp.CODE.read_text(encoding="utf-8"))
+    return tuple(pathlib.Path(spec[k]["source"]).stem for k in ("reader", "machine5_live"))
 AMP_RETURN = 0x1C99D3
 SETUP_GUARD, SETUP_TABLE_READ, SETUP_NONE = 0x1C905D, 0x1C90A9, 0x1C90D4
 CLAMP_MIN = 0x1C294C
 NOTE_CELL = V.ENGINE + 0x1387C
 WAV1, TBL1 = 26, 27             # WaveTone's Osc1 Waveform, Osc1 Wave Table
 TUN1 = 25                       # WaveTone's Osc1 Tune (Milestone 6)
+LEV1 = 30                       # WaveTone's Osc1 Level (Milestone 9a): the reader's gain
 TUN1_ZERO = 0x4000              # the frame word for 0 semitones: the sound's own (probe, 2026-09-30)
 FRAME_COPY = 0x25C48C           # where sw 0x1c2712 copies the frame image
 
@@ -176,7 +184,8 @@ def run_blocks(init, frames, blocks: int, extra_hooks=None):
                     ins[t] = {"note": V.bits_f32(m2.word(r.state, NOTE_CELL + 4 * t) or 0),
                               "wav1": frame_word(r.state, FR.slot_offset(t, WAV1)),
                               "tbl1": frame_word(r.state, FR.slot_offset(t, TBL1)),
-                              "tun1": frame_word(r.state, FR.slot_offset(t, TUN1))}
+                              "tun1": frame_word(r.state, FR.slot_offset(t, TUN1)),
+                              "lev1": frame_word(r.state, FR.slot_offset(t, LEV1))}
             tap["t5_inputs"] = ins
 
         def at_reader(r):
@@ -249,7 +258,8 @@ def track_series(run, t) -> list[float]:
 
 def reference_for(run, t, tables, precision="float32") -> list[float]:
     """live.render_blocks fed the DSP's own unpacked inputs for track T, block by block."""
-    seq = [(i[t]["note"], i[t]["wav1"], i[t]["tbl1"], i[t].get("tun1", live.TUN1_ZERO))
+    seq = [(i[t]["note"], i[t]["wav1"], i[t]["tbl1"], i[t].get("tun1", live.TUN1_ZERO),
+            i[t].get("lev1", live.LEV1_UNITY))
            for i in run["t5_inputs"] if t in i]
     return live.render_blocks(tables, seq, BLOCK, 0, precision)[0]
 
@@ -288,7 +298,7 @@ def selmap_text(code: bytes, work: pathlib.Path) -> dict[int, tuple[int, str]]:
 
 def decode_check(dk, image: Image, work: pathlib.Path, use_selmap: bool) -> dict:
     res = {}
-    for name, load_sw in (("reader_m5", dsp.READER_SW), ("machine5_live", dsp.LOOP_SW)):
+    for name, load_sw in zip(shipped_sources(), (dsp.READER_SW, dsp.LOOP_SW)):
         spec = json.loads((SHARC / f"{name}.json").read_text(encoding="utf-8"))
         code = sharc_object.load_bytes(bytes.fromhex(spec["object_parcels_be"]))
         lines = [ln for ln in (SHARC / f"{name}.asm").read_text(encoding="utf-8").splitlines()
@@ -321,7 +331,7 @@ def decode_check(dk, image: Image, work: pathlib.Path, use_selmap: bool) -> dict
     res["entry"] = {"type": entry.type_name, "fields": {k: v for k, v in fields.items()},
                     "len": entry.length_bytes, "nop": nop.type_name, "after": nxt.type_name}
     ok = all(not res[n]["disagreements"] and res[n]["source_sha256_matches"]
-             for n in ("reader_m5", "machine5_live")) and entry.type_name.startswith("8a") \
+             for n in shipped_sources()) and entry.type_name.startswith("8a") \
         and entry.length_bytes == 6 and nop.length_bytes == 2
     return {"ok": ok, "detail": res}
 
@@ -402,7 +412,7 @@ def main(argv=None):
             s1["ok"] = all(s1["checks"].values())
             results["1_decode"] = s1
             show(s1)
-            for n in ("reader_m5", "machine5_live"):
+            for n in shipped_sources():
                 for d in s1["detail"][n]["disagreements"][:20]:
                     print("     ", n, d)
 
@@ -574,6 +584,8 @@ def step_voice(init, sound, machines, blocks, tables) -> dict:
             "note72": run_blocks(init, frames(overrides={WAV1: 0x7800}, note=0x4800), blocks),
             "tune_up12": run_blocks(init, frames(overrides={WAV1: 0x7800, TUN1: TUN1_ZERO + 12 * 256}), blocks),
             "tune_down12": run_blocks(init, frames(overrides={WAV1: 0x7800, TUN1: TUN1_ZERO - 12 * 256}), blocks),
+            "lev50": run_blocks(init, frames(overrides={WAV1: 0x7800, LEV1: 0x3200}), blocks),
+            "lev0": run_blocks(init, frames(overrides={WAV1: 0x7800, LEV1: 0}), blocks),
             "silent": run_blocks(init, lambda b: base_frame(sound, machines).to_bytes(), blocks)}
     ok_runs = all(r["ok"] for r in runs.values())
     n, mism = {}, {}
@@ -615,6 +627,9 @@ def step_voice(init, sound, machines, blocks, tables) -> dict:
          "inc_tun1_up12": inc_up, "inc_tun1_down12": inc_down,
          "zero_crossings_tun1_up12": zc_up, "zero_crossings_tun1_down12": zc_down,
          "silent_amp_out_peak": V.peak(runs["silent"]["amp_out"]) if runs["silent"]["ok"] else None,
+         "machine_peak_pos120": V.peak(track_series(runs["pos120"], 0)) if runs["pos120"]["ok"] else None,
+         "machine_peak_lev50": V.peak(track_series(runs["lev50"], 0)) if runs["lev50"]["ok"] else None,
+         "machine_peak_lev0": V.peak(track_series(runs["lev0"], 0)) if runs["lev0"]["ok"] else None,
          "setup_events_after_type5_guard": t0_events,
          "instructions_per_block": round(i.get("instructions", 0) / max(blocks, 1)),
          "wall_s": {k: r.get("wall_s") for k, r in runs.items()},
@@ -641,6 +656,10 @@ def step_voice(init, sound, machines, blocks, tables) -> dict:
         "increment ratios 2 and 0.5 within 1e-6 of note 60's, zero crossings more and fewer":
             bool(inc60) and abs(inc_up / inc60 - 2.0) < 1e-6 and abs(inc_down / inc60 - 0.5) < 1e-6
             and zc_up > zc60 > zc_down > 0,
+        "LEV1 50 (0x3200) halves the machine tap: its peak is POS 120's x 0.5 within 1e-6 (M9a)":
+            bool(n["machine_peak_pos120"]) and n["machine_peak_lev50"] is not None
+            and abs(n["machine_peak_lev50"] / n["machine_peak_pos120"] - 0.5) < 1e-6,
+        "LEV1 0 silences the machine tap (peak 0) (M9a)": n["machine_peak_lev0"] == 0,
         "control: no trigger is silent at the amp's output (peak < 0.01)":
             n["silent_amp_out_peak"] is not None and n["silent_amp_out_peak"] < 0.01,
     }
