@@ -131,6 +131,8 @@ def main() -> int:
                    help="count the entries to VA (after reset-trace, if one is given)")
     p.add_argument("--stack-at", action="append", default=[], metavar="VA",
                    help="at every entry to VA, the code addresses on the stack: who calls it")
+    p.add_argument("--stack-words", action="append", default=[], metavar="VA:N",
+                   help="at every entry to VA, the N longs on the stack and the C string each points at")
     p.add_argument("--regs-last", type=int, default=0, metavar="N",
                    help="keep the last N register rows at each --regs-at VA, not the first 6")
     p.add_argument("--args-at", action="append", default=[],
@@ -309,6 +311,30 @@ def main() -> int:
             key = f"{address:#010x}: " + " ".join(chain.split(" ")[:12])
             stacks[key] = stacks.get(key, 0) + 1
         uc.hook_add(UC_HOOK_CODE, stacked, begin=int(va, 0), end=int(va, 0))
+
+    # what VA is handed: the first N longs on the stack (the return address first), and
+    # for each, the C string it points at if it looks like one
+    stack_words: dict[str, list] = {}
+    for spec in a.stack_words:
+        sva, sn = (int(x, 0) for x in spec.split(":"))
+
+        def words_at(uc_, address, size, user, n=sn):
+            sp = uc.reg_read(K.UC_M68K_REG_A7)
+            row = []
+            for v in struct.unpack(f">{n}I", bytes(uc.mem_read(sp, 4 * n))):
+                txt = ""
+                try:
+                    raw = bytes(uc.mem_read(v, 32))
+                    end = raw.find(b"\x00")
+                    if end > 0 and all(32 <= c < 127 for c in raw[:end]):
+                        txt = raw[:end].decode()
+                except Exception:
+                    pass
+                row.append(f"{v:08x}" + (f" '{txt}'" if txt else ""))
+            rows = stack_words.setdefault(f"{address:#010x}", [])
+            rows.append(row)
+            del rows[:-12]
+        uc.hook_add(UC_HOOK_CODE, words_at, begin=sva, end=sva)
 
     regs_at: dict[str, list] = {}
     for va in a.regs_at:
@@ -556,7 +582,7 @@ def main() -> int:
 
     result = {"build": str(build), "snapshot": a.snapshot, "stock": a.stock, "screens": shots,
               "calls": calls, "type_reads": type_reads, "getter_type5_callers": getter5,
-              "track_getter_type5_callers": track_getter5, "regs_at": regs_at, "stacks": stacks,
+              "track_getter_type5_callers": track_getter5, "regs_at": regs_at, "stacks": stacks, "stack_words": stack_words,
               "setter_writes": writes,
               "mirror_type_writes": mirror_writes, "type_writes": type_writes,
               "direct_calls": calls_made,
