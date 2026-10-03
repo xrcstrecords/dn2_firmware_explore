@@ -7,9 +7,9 @@ merge or cherry-pick this file into `feat/layermidi` or
 
 - Upstream PR: https://github.com/angellinares/dn2_firmware_explore/pull/176
   (head `xrcstrecords:feat/layermidi`)
-- Depends on #175 (`xrcstrecords:chore/portable-emu-paths`). Its worktree fix
-  is commit `a531a08` on `origin/claude/pr-comments-gameplan-wqgnha`, on top of
-  `df1ad4e`.
+- Depends on #175 (`xrcstrecords:chore/portable-emu-paths`). That branch
+  already holds both worktree fixes: `a531a08` (main checkout via git) and
+  `73b312d` (a Windows-git worktree read in WSL), on top of `df1ad4e`.
 
 ## What the maintainer asked for (angellinares, 2026-10-02)
 
@@ -74,8 +74,7 @@ only the layermidi commits:
 git checkout -B layermidi-platform upstream/main
 # If #175 has merged upstream, skip this merge.
 # If not, bring in #175 *with its worktree fix*.
-# Check which branch holds a531a08 first; see "Pushing #175" at the end.
-git merge --no-ff origin/chore/portable-emu-paths   # or: origin/claude/pr-comments-gameplan-wqgnha~1
+git merge --no-ff origin/chore/portable-emu-paths   # head 73b312d or later
 git cherry-pick a87b75b a057051 431e88c 5ed2f8f
 ```
 
@@ -296,15 +295,14 @@ so **confirm with the owner first**:
 git push --force-with-lease=feat/layermidi:5ed2f8f origin layermidi-platform:feat/layermidi
 ```
 
-## Pushing #175
+## #175 status
 
-The #175 worktree fix (`a531a08`) is on
-`origin/claude/pr-comments-gameplan-wqgnha`, one commit after `df1ad4e`, which
-is #175's current head. To update PR #175 itself, fast-forward its branch to
-that commit; this is not a force push:
+`chore/portable-emu-paths` is pushed, with head `73b312d`. The maintainer's
+second round reported that WSL's git cannot follow a worktree made by Windows
+git (a `D:/...` gitdir). `73b312d` reads the worktree's `.git` file and
+`commondir` itself, and maps the drive to `/mnt/d/`. Nothing more to push there
+unless the maintainer comments again. Do not push this gameplan commit there.
 
-```sh
-git push origin a531a08:chore/portable-emu-paths
-```
-
-Do not push this gameplan commit there.
+The worktree setup the maintainer uses: Windows git makes the worktrees,
+and the harnesses run in WSL. If this machine is set up that way, run the
+emulator gates from such a worktree. That exercises the fix for real.
