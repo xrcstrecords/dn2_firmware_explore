@@ -26,7 +26,9 @@ clones sit next to the *main* checkout, and `00_Resources` (gitignored) and
 built tools exist only there unless linked in. So siblings are looked for next
 to `MAIN`, the main checkout, and anything untracked under the checkout in
 `ROOT` first, then in `MAIN`. Outside a worktree `MAIN` is `ROOT`, and nothing
-changes. The full order for those: the variable, `ROOT`, `MAIN`, then the
+changes. A worktree made by Windows git and run from WSL has a `D:/...` path
+in its `.git` file, which WSL's git cannot follow; `MAIN` is then read off
+that file, with the drive mapped to `/mnt/d/...`. The full order for those: the variable, `ROOT`, `MAIN`, then the
 first default.
 
 Standard library only: these scripts run under digikit's venv, which has no
@@ -43,19 +45,61 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
-def main_checkout(root: pathlib.Path) -> pathlib.Path:
-    """-> the main checkout ROOT belongs to: the parent of git's common
-    directory, which is ROOT itself outside a worktree. ROOT, quietly, when
-    git is missing, too old for `--path-format`, or ROOT is not a checkout."""
+WSL_MOUNT = pathlib.Path("/mnt")       # where WSL mounts Windows drives: D: is /mnt/d
+
+
+def native(path: str, windows: bool = os.name == "nt") -> pathlib.Path:
+    """-> PATH as this system names it: a Windows drive path (`D:/...` or
+    `D:\\...`) becomes `/mnt/d/...` off Windows, as WSL mounts it; anything
+    else is unchanged."""
+    if not windows and len(path) > 2 and path[0].isalpha() and path[1] == ":" and path[2] in "/\\":
+        return WSL_MOUNT / path[0].lower() / path[3:].replace("\\", "/")
+    return pathlib.Path(path)
+
+
+def _parent_of_dot_git(common: pathlib.Path) -> pathlib.Path | None:
+    # A submodule's common directory is `.git/modules/<name>`: not a checkout's.
+    return common.parent if common.is_absolute() and common.name == ".git" else None
+
+
+def _from_git(root: pathlib.Path) -> pathlib.Path | None:
     try:
         out = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"],
             capture_output=True, text=True, timeout=10, check=True).stdout.strip()
     except (OSError, subprocess.SubprocessError):
-        return root
-    common = pathlib.Path(out)
-    # A submodule's common directory is `.git/modules/<name>`: not a checkout's.
-    return common.parent.resolve() if common.is_absolute() and common.name == ".git" else root
+        return None
+    main = _parent_of_dot_git(pathlib.Path(out))
+    return main.resolve() if main else None
+
+
+def from_git_file(root: pathlib.Path) -> pathlib.Path | None:
+    """-> the main checkout, read off a worktree's `.git` file without git, or
+    None. Its `gitdir:` line names the worktree's git directory, whose
+    `commondir` file (normally `../..`) names the common one, relative to it.
+
+    For a worktree made by Windows git and read in WSL: the `gitdir:` is a
+    `D:/...` path, which WSL's git cannot follow (`not a git repository`)."""
+    try:
+        text = (root / ".git").read_text(encoding="utf-8")   # a directory: not a worktree
+        gitdir = next(native(line[len("gitdir:"):].strip()) for line in text.splitlines()
+                      if line.startswith("gitdir:"))
+        gitdir = gitdir if gitdir.is_absolute() else root / gitdir   # relative worktree links
+        common = native((gitdir / "commondir").read_text(encoding="utf-8").strip())
+    except (OSError, UnicodeDecodeError, StopIteration):
+        return None
+    main = _parent_of_dot_git(pathlib.Path(os.path.normpath(
+        common if common.is_absolute() else gitdir / common)))
+    return main.resolve() if main else None
+
+
+def main_checkout(root: pathlib.Path) -> pathlib.Path:
+    """-> the main checkout ROOT belongs to: the parent of git's common
+    directory, which is ROOT itself outside a worktree. Asked of git first;
+    when git cannot answer (missing, too old for `--path-format`, or a
+    worktree whose `.git` file another system's git wrote), read off the
+    worktree's `.git` file; else ROOT, quietly."""
+    return _from_git(root) or from_git_file(root) or root
 
 
 MAIN = main_checkout(ROOT)
