@@ -46,9 +46,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 WSL_MOUNT = pathlib.Path("/mnt")       # where WSL mounts Windows drives: D: is /mnt/d
+WINDOWS = os.name == "nt"
 
 
-def native(path: str, windows: bool = os.name == "nt") -> pathlib.Path:
+def native(path: str, windows: bool = WINDOWS) -> pathlib.Path:
     """-> PATH as this system names it: a Windows drive path (`D:/...` or
     `D:\\...`) becomes `/mnt/d/...` off Windows, as WSL mounts it; anything
     else is unchanged."""
@@ -73,19 +74,20 @@ def _from_git(root: pathlib.Path) -> pathlib.Path | None:
     return main.resolve() if main else None
 
 
-def from_git_file(root: pathlib.Path) -> pathlib.Path | None:
+def from_git_file(root: pathlib.Path, windows: bool = WINDOWS) -> pathlib.Path | None:
     """-> the main checkout, read off a worktree's `.git` file without git, or
     None. Its `gitdir:` line names the worktree's git directory, whose
     `commondir` file (normally `../..`) names the common one, relative to it.
 
     For a worktree made by Windows git and read in WSL: the `gitdir:` is a
-    `D:/...` path, which WSL's git cannot follow (`not a git repository`)."""
+    `D:/...` path, which WSL's git cannot follow (`not a git repository`).
+    WINDOWS is whether drive paths are this host's own (see `native`)."""
     try:
         text = (root / ".git").read_text(encoding="utf-8")   # a directory: not a worktree
-        gitdir = next(native(line[len("gitdir:"):].strip()) for line in text.splitlines()
+        gitdir = next(native(line[len("gitdir:"):].strip(), windows) for line in text.splitlines()
                       if line.startswith("gitdir:"))
         gitdir = gitdir if gitdir.is_absolute() else root / gitdir   # relative worktree links
-        common = native((gitdir / "commondir").read_text(encoding="utf-8").strip())
+        common = native((gitdir / "commondir").read_text(encoding="utf-8").strip(), windows)
     except (OSError, UnicodeDecodeError, StopIteration):
         return None
     main = _parent_of_dot_git(pathlib.Path(os.path.normpath(
@@ -93,13 +95,13 @@ def from_git_file(root: pathlib.Path) -> pathlib.Path | None:
     return main.resolve() if main else None
 
 
-def main_checkout(root: pathlib.Path) -> pathlib.Path:
+def main_checkout(root: pathlib.Path, windows: bool = WINDOWS) -> pathlib.Path:
     """-> the main checkout ROOT belongs to: the parent of git's common
     directory, which is ROOT itself outside a worktree. Asked of git first;
     when git cannot answer (missing, too old for `--path-format`, or a
     worktree whose `.git` file another system's git wrote), read off the
     worktree's `.git` file; else ROOT, quietly."""
-    return _from_git(root) or from_git_file(root) or root
+    return _from_git(root) or from_git_file(root, windows) or root
 
 
 MAIN = main_checkout(ROOT)

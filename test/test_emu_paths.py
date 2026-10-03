@@ -120,12 +120,15 @@ def _git_cannot_follow(monkeypatch):
 ])
 def test_a_windows_git_worktree_in_wsl_finds_its_main_checkout(tmp_path, monkeypatch, gitdir_line):
     """The case the maintainer's boot gate hit: git refuses the worktree, so
-    the main checkout is read off its `.git` file and `commondir`."""
+    the main checkout is read off its `.git` file and `commondir`. As WSL sees
+    it, whatever the host running the test: `windows=False` explicitly, so the
+    drive mapping is tested on Windows too."""
     main, worktree = _windows_git_worktree(tmp_path, monkeypatch, gitdir_line)
     _git_cannot_follow(monkeypatch)
-    assert paths.from_git_file(worktree) == main
-    assert paths.main_checkout(worktree) == main
-    assert paths.local(SYX_REL, worktree, paths.main_checkout(worktree))[1] == main / SYX_REL
+    assert paths.from_git_file(worktree, windows=False) == main
+    assert paths.main_checkout(worktree, windows=False) == main
+    found = paths.main_checkout(worktree, windows=False)
+    assert paths.local(SYX_REL, worktree, found)[1] == main / SYX_REL
 
 
 def test_a_relative_gitdir_is_relative_to_the_worktree(tmp_path, monkeypatch):
@@ -133,7 +136,7 @@ def test_a_relative_gitdir_is_relative_to_the_worktree(tmp_path, monkeypatch):
     main, worktree = _windows_git_worktree(tmp_path, monkeypatch,
                                            "gitdir: ../../../.git/worktrees/pr175")
     _git_cannot_follow(monkeypatch)
-    assert paths.main_checkout(worktree) == main
+    assert paths.main_checkout(worktree, windows=False) == main
 
 
 def test_a_submodules_git_file_is_not_a_worktree(tmp_path, monkeypatch):
