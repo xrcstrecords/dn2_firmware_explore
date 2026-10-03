@@ -8,8 +8,9 @@ merge or cherry-pick this file into `feat/layermidi` or
 - Upstream PR: https://github.com/angellinares/dn2_firmware_explore/pull/176
   (head `xrcstrecords:feat/layermidi`)
 - Depends on #175 (`xrcstrecords:chore/portable-emu-paths`). That branch
-  already holds both worktree fixes: `a531a08` (main checkout via git) and
-  `73b312d` (a Windows-git worktree read in WSL), on top of `df1ad4e`.
+  already holds the worktree fixes: `a531a08` (main checkout via git),
+  `73b312d` (a Windows-git worktree read in WSL) and `3973be4` (its test on any
+  host), on top of `df1ad4e`.
 
 ## What the maintainer asked for (angellinares, 2026-10-02)
 
@@ -74,7 +75,7 @@ only the layermidi commits:
 git checkout -B layermidi-platform upstream/main
 # If #175 has merged upstream, skip this merge.
 # If not, bring in #175 *with its worktree fix*.
-git merge --no-ff origin/chore/portable-emu-paths   # head 73b312d or later
+git merge --no-ff origin/chore/portable-emu-paths   # head 3973be4 or later
 git cherry-pick a87b75b a057051 431e88c 5ed2f8f
 ```
 
@@ -297,11 +298,14 @@ git push --force-with-lease=feat/layermidi:5ed2f8f origin layermidi-platform:fea
 
 ## #175 status
 
-`chore/portable-emu-paths` is pushed, with head `73b312d`. The maintainer's
+`chore/portable-emu-paths` is pushed, with head `3973be4`. The maintainer's
 second round reported that WSL's git cannot follow a worktree made by Windows
 git (a `D:/...` gitdir). `73b312d` reads the worktree's `.git` file and
-`commondir` itself, and maps the drive to `/mnt/d/`. Nothing more to push there
-unless the maintainer comments again. Do not push this gameplan commit there.
+`commondir` itself, and maps the drive to `/mnt/d/`. The maintainer confirmed
+the boot gate passes from such a worktree. Their third round said the new test
+failed on a Windows host; `3973be4` passes `windows=False` explicitly, and the
+maintainer called it "ready to merge from our side" with that change. Nothing
+more to push there unless the maintainer comments again. Do not push this gameplan commit there.
 
 The worktree setup the maintainer uses: Windows git makes the worktrees,
 and the harnesses run in WSL. If this machine is set up that way, run the
